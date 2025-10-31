@@ -101,38 +101,45 @@ class SG_Endpoints {
     }
 
     function sg_get_products($request) {
-        $parameters 	= $request->get_params();
-        $category       = sanitize_text_field($parameters['category']);
-        $onSale         = sanitize_text_field($parameters['on_sale']);
-        $featured       = sanitize_text_field($parameters['featured']);
-        $orderBy        = sanitize_text_field($parameters['orderby']);
-        $perPage        = sanitize_text_field($parameters['per_page']);
-        $search         = sanitize_text_field($parameters['search']);
-        $product_ids  = isset($parameters['include']) ? array_map('sanitize_text_field', explode(',', $parameters['include'])) : [];
+        $parameters     = $request->get_params();
+        
+        // isset() para evitar errores Undefined index
+        $category       = isset($parameters['category']) ? sanitize_text_field($parameters['category']) : null;
+        $onSale         = isset($parameters['on_sale']) ? sanitize_text_field($parameters['on_sale']) : null;
+        $featured       = isset($parameters['featured']) ? sanitize_text_field($parameters['featured']) : null;
+        $orderBy        = isset($parameters['orderby']) ? sanitize_text_field($parameters['orderby']) : 'date';
+        $perPage        = isset($parameters['per_page']) ? intval($parameters['per_page']) : 20;
+        $page           = isset($parameters['page']) ? intval($parameters['page']) : 1;
+        $search         = isset($parameters['search']) ? sanitize_text_field($parameters['search']) : null;
+        $product_ids    = isset($parameters['include']) ? array_map('sanitize_text_field', explode(',', $parameters['include'])) : [];
 
-        $categoryTerm = $this->getCatTermById($category);
+        $categoryTerm = $category ? $this->getCatTermById($category) : null;
 
         $args = array(
-            'orderby'  => 'name',
-            'post_status' => 'publish',
-            'stock_status' => 'instock'
+            'orderby'       => $orderBy,
+            'post_status'   => 'publish',
+            'stock_status'  => 'instock',
+            'limit'         => $perPage,
+            'page'          => $page,
+            'paginate'      => true,  // activa la paginación
+            'return'        => 'objects'
         );
 
         if (!empty($product_ids)) {
             $args['include'] = $product_ids;
         } else {
-            if ($category) $args['category'] = $categoryTerm;
+            if ($categoryTerm) $args['category'] = $categoryTerm;
             if ($onSale) {
                 $sales_ids = wc_get_product_ids_on_sale();
                 $args['include'] = $sales_ids;
             }
-            if ($featured) $args['featured'] = $featured;
-            if ($orderBy) $args['orderby'] = $orderBy;
-            if ($perPage) $args['limit'] = $perPage;
+            if ($featured) $args['featured'] = true;
             if ($search) $args['s'] = $search;
         }
 
-        $products = wc_get_products( $args );
+        // Con paginate=true, wc_get_products devuelve un objeto con ->products
+        $results = wc_get_products( $args );
+        $products = $results->products;  // Acceder a ->products
         $simplified_data = array();
 
         foreach ($products as $key => $single_product_data) {
@@ -155,9 +162,16 @@ class SG_Endpoints {
             }
         }
 
+        // Devolver con información de paginación
         return array(
             'status' => true,
-            'results' => $simplified_data
+            'results' => $simplified_data,
+            'pagination' => array(
+                'total'         => $results->total,
+                'total_pages'   => $results->max_num_pages,
+                'current_page'  => $page,
+                'per_page'      => $perPage
+            )
         );
     }
 
